@@ -4,48 +4,76 @@ from urllib.parse import urljoin, urlparse
 import re
 
 BASE_URL = "https://rdm.vu.nl/topics.html"
-OUTPUT_FILE = "rdm_vu_topics.txt"
+BASE_URL2 = "https://rdm.vu.nl/topics#listing-listing-page=2"
+OUTPUT_FILE = "rdm_vu_knowledge_base.txt"
 
 
 def clean_text(text):
     """Clean and normalize extracted text for LLM ingestion."""
-    text = re.sub(r'\s+', ' ', text)  # collapse whitespace
-    text = re.sub(r'(?m)^\s*$', '', text)  # remove empty lines
+    text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 
-def get_page_text(url):
-    """Fetch page and extract readable text."""
+def get_page_sections(url):
+    """Fetch page and extract sections (based on headings)."""
     try:
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
     except Exception as e:
         print(f"[WARN] Could not fetch {url}: {e}")
-        return ""
+        return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # Remove scripts, styles, and nav elements
-    for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
+    # Remove unwanted tags
+    for tag in soup(["script", "style", "nav", "footer", "header", "noscript", "aside"]):
         tag.decompose()
 
-    # Extract visible text
-    texts = soup.stripped_strings
-    full_text = " ".join(texts)
-    return clean_text(full_text)
+    # Get page title
+    title = soup.title.string.strip() if soup.title else url
+
+    # Extract sections based on headings (h2 or h3)
+    sections = []
+    current_heading = None
+    current_text = []
+
+    for element in soup.find_all(["h2", "h3", "p", "li"]):
+        if element.name in ["h2", "h3"]:
+            # Save previous section
+            if current_heading and current_text:
+                section_text = clean_text(" ".join(current_text))
+                if len(section_text) > 50:  # skip tiny fragments
+                    sections.append((current_heading, section_text))
+            # Start new section
+            current_heading = element.get_text(strip=True)
+            current_text = []
+        else:
+            current_text.append(element.get_text(strip=True))
+
+    # Add final section
+    if current_heading and current_text:
+        section_text = clean_text(" ".join(current_text))
+        if len(section_text) > 50:
+            sections.append((current_heading, section_text))
+
+    # If no headings were found, store the whole page as one block
+    if not sections:
+        body_text = clean_text(" ".join(soup.stripped_strings))
+        sections.append((title, body_text))
+
+    return title, sections
 
 
-def get_topic_links():
+def get_topic_links(url):
     """Extract topic links from the main topics page."""
-    resp = requests.get(BASE_URL)
+    resp = requests.get(url)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
     links = set()
     for a in soup.find_all("a", href=True):
         href = a["href"]
-        full_url = urljoin(BASE_URL, href)
-        # Filter only pages within the same domain
+        full_url = urljoin(url, href)
         if urlparse(full_url).netloc.endswith("vu.nl"):
             links.add(full_url)
 
@@ -54,22 +82,23 @@ def get_topic_links():
 
 def main():
     print("[INFO] Fetching topic links...")
-    topic_links = get_topic_links()
+    topic_links = get_topic_links(BASE_URL) + get_topic_links(BASE_URL2)
     print(f"[INFO] Found {len(topic_links)} topic pages.")
 
-    all_texts = []
-    for i, url in enumerate(topic_links, 1):
-        print(f"[{i}/{len(topic_links)}] Scraping {url}")
-        page_text = get_page_text(url)
-        if page_text:
-            all_texts.append(f"### Page: {url}\n\n{page_text}\n")
-
-    combined_text = "\n\n".join(all_texts)
-
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        f.write(combined_text)
+        for i, url in enumerate(topic_links, 1):
+            print(f"[{i}/{len(topic_links)}] Scraping {url}")
+            title, sections = get_page_sections(url)
 
-    print(f"\n✅ Done! Saved all text to {OUTPUT_FILE}")
+            f.write(f"### Topic: {title}\n")
+            f.write(f"Source: {url}\n\n")
+
+            for heading, text in sections:
+                f.write(f"#### Subtopic: {heading}\n{text}\n\n")
+
+            f.write("\n---\n\n")
+
+    print(f"\n✅ Done! Structured knowledge base saved to {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,11 @@
+     How can VU researchers contact IT for Research support?  
+     What is the purpose of the Knowledge Security Framework at VU Amsterdam?  
+     What are the categories of guides available in the Research Support Handbook?  
+     What does it mean to ensure research data is FAIR?  
+     How can VU researchers comply with GDPR when handling personal data?  
+     What steps are involved in setting up research data management from the start?  
+     What is the process for ensuring data provenance and accurate analysis during research?  
+     How can international collaboration be conducted securely at VU Amsterdam?  
+     What resources does VU Amsterdam provide to help researchers reuse existing research data?  
+     How can VU researchers ensure secure storage, transfer, and sharing of sensitive research data?
+     
